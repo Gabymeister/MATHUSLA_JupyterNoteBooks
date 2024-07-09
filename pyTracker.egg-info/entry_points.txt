@@ -1,0 +1,2 @@
+[console_scripts]
+pytracker = tracker.run:main
