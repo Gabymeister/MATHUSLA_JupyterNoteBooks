@@ -200,7 +200,7 @@ class FW_Veto:
         TrackPoints = SortByTime(track.hits_filtered)
         hit_pos = np.array((hit.x, hit.y, hit.z))
         hit_err = np.array((hit.x_err, hit.y_err, hit.z_err))
-        proj_time = ProjectionTime(track, TrackPoints, hit.layer)
+        proj_time = hit.t
         proj_point = ProjectionPoint(track,TrackPoints, proj_time)
         if proj_point[1] < y_bottoms[0] or \
         proj_point[0] < x_lims[0] or proj_point[0] > x_lims[1] or \
@@ -233,9 +233,6 @@ class FW_Veto:
                 v_tracks.append(tracks[t_index])
             for track in v_tracks:
                 for hit in wf_hits:
-                    TrackPoints = SortByTime(track.hits_filtered)
-                    proj_time = ProjectionTime(track, TrackPoints, hit.layer)
-                    proj_point = ProjectionPoint(track,TrackPoints, proj_time)
                     cur_chi2 = FW_Veto.GetChiSquared(hit,track)
                     if cur_chi2 is not None and (min_chi2 is None or cur_chi2 < min_chi2):
                         min_chi2 = cur_chi2
@@ -266,7 +263,7 @@ class FW_Veto:
                 for hit in wf_hits:
                     hit_pos = np.array((hit.x, hit.y, hit.z))
                     TrackPoints = SortByTime(track.hits_filtered)
-                    proj_time = ProjectionTime(track, TrackPoints, hit.layer)
+                    proj_time = hit.t
                     proj_point = ProjectionPoint(track,TrackPoints, proj_time)
                     if proj_point is not None:
                         dist = GetDistance(hit_pos, proj_point)
@@ -411,6 +408,9 @@ class IPVeto:
 
 #----------------------------------------------------------------------------------------
 class MaterialVeto:
+    """
+    This only vetoes if all vertices are within the cutoff range
+    """
 
     def MakeLayers():
         """
@@ -571,16 +571,15 @@ class MaterialVeto:
 
     def DistanceVeto(vertices, materials, cutoff):
         """
-        Vetoes the an event if a vertex is within the cutoff
-        distance from a material.
+        Vetoes the an event if all vertices are within the cutoff distance from a material.
         Return True if vetoed. Return false if not vetoed
         """
-        min_dist = None
+        max_dist = None # Max of the minimum distances
         for vertex in vertices:
             dist = MaterialVeto.MinDistance(vertex, materials)
-            if min_dist is None or dist < min_dist:
-                min_dist = dist
-        if min_dist is None or min_dist > cutoff:
+            if max_dist is None or dist > max_dist:
+                max_dist = dist
+        if max_dist is None or max_dist > cutoff:
             return False
         return True
 
