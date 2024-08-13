@@ -13,9 +13,9 @@ import importlib
 from importlib import reload
 import copy as cp
 
-sys.path.append("/home/owhgabri/My_GitHub/MATHUSLA_JupyterNoteBooks/tracker")
-sys.path.insert(1, "/home/owhgabri/My_GitHub/MATHUSLA_JupyterNoteBooks/tracker")
-os.chdir('/home/owhgabri/My_GitHub/pyTracker')
+sys.path.append("/project/rrg-mdiamond/owhgabri/MATHUSLA_JupyterNoteBooks/tracker")
+sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/MATHUSLA_JupyterNoteBooks/tracker")
+os.chdir('/project/rrg-mdiamond/owhgabri/pyTracker')
 print(os.getcwd())
 print(joblib.__version__)
 
@@ -67,7 +67,6 @@ floorMid2 = 8632.4
 IP = (0,0,0)
 
 y_bottoms = [8550, 8631.6] # Floor Vetos
-z_fronts = [6895.8, 6997.4] # Wall Vetos
 x_lims = (-1950, 1950)
 thickness = 1.6
 
@@ -171,10 +170,6 @@ def GetDistance(point1, point2):
 #----------------------------------------------------------------------------------------
 class FW_Veto:
     
-    y_bottoms = [8550, 8631.6]
-    x_lims = (-1950, 1950)
-    z_fronts = [6895.8, 6997.4]
-
     def ProjectionCovariance(track, points, t):
             """
             Returns the projected covariance of x,y,z at time t.
@@ -276,7 +271,6 @@ class FW_Veto:
     
 #----------------------------------------------------------------------------------------
 class IPVeto:
-    thickness = 1.6
 
     def IP_track_cov(hit):
         """
@@ -569,44 +563,64 @@ class MaterialVeto:
                 min_chi2 = chi2
         return min_chi2
 
-    def DistanceVeto(vertices, materials, cutoff):
+    def DistanceVeto(vertices, materials, cutoff, strict=False):
         """
-        Vetoes the an event if all vertices are within the cutoff distance from a material.
+        Vetoes an event if all vertices are within the cutoff distance from a material.
         Return True if vetoed. Return false if not vetoed
+        if strict: veto if a single vertex is within the cutoff distance from a material
         """
         max_dist = None # Max of the minimum distances
+        min_dist = None #
         for vertex in vertices:
             dist = MaterialVeto.MinDistance(vertex, materials)
             if max_dist is None or dist > max_dist:
                 max_dist = dist
-        if max_dist is None or max_dist > cutoff:
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+        if not strict and max_dist is None or max_dist > cutoff:
             return False
+        elif strict and min_dist is None or min_dist > cutoff:
+            retrn False
         return True
 
 #----------------------------------------------------------------------------------------
-def CutoffVeto(vertices):
+def CutoffVeto(vertices, strict=False):
     """
     Vetoes an event based on vertex being in decay volume
     Return True if vetoed. Return false if not vetoed
+    if strict: veto if a single vertex is outside the cutoff
     """
     for vertex in vertices:
-        if not(vertex.y0 < y_layer_starts[2] and \
+        if not (vertex.y0 < y_layer_starts[2] and \
         vertex.y0 > 8500 and vertex.x0 > -2000 and \
         vertex.x0 < 2000 and vertex.z0 > 6800 and \
-        vertex.z0 < 11350):
-            return True
-    return False
+        vertex.z0 < 11350): # One outside 
+            if strict:
+                return True
+        else: # One inside
+            if not strict:
+                return False
+    if strict: # None outside
+        return False
+    else: # All outside
+        return True
 
 #----------------------------------------------------------------------------------------
-def TrackNumberVeto(vertices, n):
+def TrackNumberVeto(vertices, n, strict=False):
     """
     Vetoes an event based on track number cutoff n
     Return True if vetoed. Return false if not vetoed
+    if strict: veto if a single vertex has less than n tracks
     """
     for vertex in vertices:
-        if len(vertex.tracks) < n:
-            return True
-    return False
+        if len(vertex.tracks) < n:             
+            if strict: # one vertex less than n tracks
+                return True
+        else:
+            if not strict: # one vertex >= than n tracks
+                return False
+    if strict: # 
+        return False
 
 #----------------------------------------------------------------------------------------
 def UpVertexVeto(vertices, tracks):
