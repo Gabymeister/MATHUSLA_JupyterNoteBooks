@@ -25,12 +25,7 @@ else:
     mode = "Lenient"
     STRICT = False
 
-if (int(layers) == 4):
-    from tests import Vetoes4 as VT
-elif (int(layers) == 5):
-    from tests import Vetoes5 as VT
-elif (int(layers) == 6):
-    from tests import Vetoes6 as VT
+from tests import Vetoes as VT
 
 sys.path.append("/project/rrg-mdiamond/owhgabri/pyTracker")
 sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/pyTracker")
@@ -62,8 +57,8 @@ reload(Util)
 
 
 
-#data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/run-2024-07-mathusla40-full/DigiOutput"
-data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/LLPrun-2024-07-08/DigiOutput"
+data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/run-2024-07-mathusla40-full/DigiOutput"
+#data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/LLPrun-2024-07-08/DigiOutput"
 pathList=[]
 
 for rootFile, dirs, files in os.walk(data_top_dir):
@@ -71,8 +66,9 @@ for rootFile, dirs, files in os.walk(data_top_dir):
         if "stat0io_MuSim-noise" + noise + "-layers" + layers + "-eff" + eff in filename:
             pathList.append(os.path.join(rootFile, filename))
 
+pathList = pathList[:200]
 
-print("Running FW Veto")
+print("Running Material Veto")
 print("noise: " + noise)
 print("layers: " + layers)
 print("efficiency: " + eff)
@@ -82,7 +78,8 @@ print("distance: " + DIST)
 
 nEvents = 0
 nVetoed = 0
-materials = VT.MaterialVeto.MakeMaterials()
+MatVet = VT.MaterialVeto(int(layers))
+materials = MatVet.MakeMaterials()
 for f in pathList:
     events=joblib.load(f)
     file_vertices = events["vertices"]
@@ -91,7 +88,7 @@ for f in pathList:
         if len(vertices) == 0:
             continue
         nEvents += 1
-        if VT.MaterialVeto.DistanceVeto(vertices, materials, float(DIST), STRICT):
+        if MatVet.DistanceVeto(vertices, materials, float(DIST), STRICT):
                 nVetoed += 1
 
 print("Number of events:", nEvents)

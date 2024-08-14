@@ -23,12 +23,7 @@ if int(CHI2) == 0:
 else:
     mode = "chi2"
 
-if (int(layers) == 4):
-    from tests import Vetoes4 as VT
-elif (int(layers) == 5):
-    from tests import Vetoes5 as VT
-elif (int(layers) == 6):
-    from tests import Vetoes6 as VT
+from tests import Vetoes as VT
 
 sys.path.append("/project/rrg-mdiamond/owhgabri/pyTracker")
 sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/pyTracker")
@@ -60,15 +55,15 @@ reload(Util)
 
 
 
-#data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/run-2024-07-mathusla40-full/DigiOutput"
-data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/LLPrun-2024-07-08/DigiOutput"
+data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/run-2024-07-mathusla40-full/DigiOutput"
+#data_top_dir = f"/project/rrg-mdiamond/data/MATHUSLA/simulation/LLPrun-2024-07-08/DigiOutput"
 pathList=[]
 
 for rootFile, dirs, files in os.walk(data_top_dir):
     for filename in files:
         if "stat0io_MuSim-noise" + noise + "-layers" + layers + "-eff" + eff in filename:
             pathList.append(os.path.join(rootFile, filename))
-
+pathList = pathList[:200]
 
 print("Running FW Veto")
 print("noise: " + noise)

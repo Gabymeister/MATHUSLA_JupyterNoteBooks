@@ -13,8 +13,11 @@ import importlib
 from importlib import reload
 import copy as cp
 
-sys.path.append("/project/rrg-mdiamond/owhgabri/MATHUSLA_JupyterNoteBooks/tracker")
-sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/MATHUSLA_JupyterNoteBooks/tracker")
+from scipy.spatial import ConvexHull
+import itertools
+
+sys.path.append("/project/rrg-mdiamond/owhgabri/pyTracker")
+sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/pyTracker")
 os.chdir('/project/rrg-mdiamond/owhgabri/pyTracker')
 print(os.getcwd())
 print(joblib.__version__)
@@ -43,13 +46,8 @@ wallMid2 = 6998.2
 floorMid1 = 8550.8
 floorMid2 = 8632.4
 # -----6 layer--------------------
-# y_layer_starts = [8550, 8631.6, 9730, 9811.6, 9893.2, 9974.8, 10056.4, 10138] # 6 layer 
-# z_wall_starts = [10900, 10981.6, 11063.2, 11144.8, 11226.4, 11308] # 6 layer
-# back_top =  y_layer_starts[4] # 6 layer
-# -----4 layer--------------------
-y_layer_starts = [8550, 8631.6, 9893.2, 9974.8, 10056.4, 10138] # 4 layer
-z_wall_starts = [10900, 10981.6, 11063.2, 11144.8, 11226.4, 11308] # 4 layer
-back_top =  y_layer_starts[2] # 4 layer
+y_layer_starts = [9730, 9811.6, 9893.2, 9974.8, 10056.4, 10138] # 6 layer 
+z_wall_starts = [10900, 10981.6, 11063.2, 11144.8, 11226.4, 11308] # 6 layer
 
 x_mod_starts = [-1950, -950, 50, 950, 1050]
 n_floors = 2
@@ -67,6 +65,7 @@ floorMid2 = 8632.4
 IP = (0,0,0)
 
 y_bottoms = [8550, 8631.6] # Floor Vetos
+z_fronts = [6895.8, 6997.4] # Wall Vetos
 x_lims = (-1950, 1950)
 thickness = 1.6
 
@@ -197,10 +196,6 @@ class FW_Veto:
         hit_err = np.array((hit.x_err, hit.y_err, hit.z_err))
         proj_time = hit.t
         proj_point = ProjectionPoint(track,TrackPoints, proj_time)
-        if proj_point[1] < y_bottoms[0] or \
-        proj_point[0] < x_lims[0] or proj_point[0] > x_lims[1] or \
-        proj_point[2] < z_fronts[0]:
-            return None
         proj_cov = FW_Veto.ProjectionCovariance(track, TrackPoints, proj_time)
         proj_cov += np.diag(hit_err)
         residual = proj_point - hit_pos 
@@ -210,18 +205,17 @@ class FW_Veto:
             return None
         return residual.T @ inv_cov @ residual
 
-    def Chi2Veto(vertices, tracks, hits, cutoff):
+    def MinChi2(vertices, tracks, hits):
         """
-        Decide if the event is vetoed based on the chi2 cutoff
-        Return True if vetoed. Return false if not vetoed
+        Gets the minimum chi2 of the event
         """
+        min_chi2 = None
         wf_hits = []
         for hit in hits:
             if hit.layer < 4:
                 wf_hits.append(hit)
         if len(wf_hits) == 0: # Event passes
-            return False
-        min_chi2 = None
+            return min_chi2
         for vertex in vertices:
             v_tracks = []
             for t_index in vertex.tracks:
@@ -231,25 +225,20 @@ class FW_Veto:
                     cur_chi2 = FW_Veto.GetChiSquared(hit,track)
                     if cur_chi2 is not None and (min_chi2 is None or cur_chi2 < min_chi2):
                         min_chi2 = cur_chi2
-        if min_chi2 is None:
-            return False
-        chi2_red = min_chi2
-        if chi2_red > 0 and chi2_red < cutoff:
-            return True
-        return False
- 
-    def DistanceVeto(vertices, tracks, hits, cutoff):
+        return min_chi2
+    
+    def MinDistance(vertices, tracks, hits):
         """
-        Decide if the event is vetoed based on the distance cutoff
-        Return True if vetoed. Return false if not vetoed
-        """        
+        Gets the minimum distance of the event between
+        all vertex-track projections and f/w hits
+        """
+        min_dist = None
         wf_hits = []
         for hit in hits:
             if hit.layer < 4:
                 wf_hits.append(hit)
         if len(wf_hits) == 0: # Event passes 
-            return False
-        min_dist = None
+            return min_dist
         for vertex in vertices:
             v_tracks = []
             for t_index in vertex.tracks:
@@ -260,13 +249,33 @@ class FW_Veto:
                     TrackPoints = SortByTime(track.hits_filtered)
                     proj_time = hit.t
                     proj_point = ProjectionPoint(track,TrackPoints, proj_time)
-                    if proj_point is not None:
-                        dist = GetDistance(hit_pos, proj_point)
+                    dist = GetDistance(hit_pos, proj_point)
                     if (min_dist is None or dist < min_dist):
                         min_dist = dist
-        if min_dist is None or min_dist < cutoff:
+        return min_dist
+
+    def Chi2Veto(vertices, tracks, hits, cutoff):
+        """
+        Decide if the event is vetoed based on the chi2 cutoff
+        Return True if vetoed. Return false if not vetoed
+        """
+        min_chi2 = FW_Veto.MinChi2(vertices, tracks, hits)
+        if min_chi2 is None:
+            return False
+        if min_chi2 > 0 and min_chi2 < cutoff:
             return True
-        
+        return False
+ 
+    def DistanceVeto(vertices, tracks, hits, cutoff):
+        """
+        Decide if the event is vetoed based on the distance cutoff
+        Return True if vetoed. Return false if not vetoed
+        """
+        min_dist = FW_Veto.MinDistance(vertices, tracks, hits)
+        if min_dist is None:
+            return False
+        if min_dist < cutoff:
+            return True
         return False
     
 #----------------------------------------------------------------------------------------
@@ -372,19 +381,19 @@ class IPVeto:
                         [0, 1, 0, 0, t-t0, 0],
                         [0, 0, 1, 0, 0, t-t0]])
         return jac@track.cov@jac.T
-
-    def DistanceVeto(vertices, tracks, hits, cutoff):
+    
+    def MinDistance(vertices, tracks, hits):
         """
-        Decide if the event is vetoed based on the distance cutoff
-        Return True if vetoed. Return false if not vetoed
-        """      
+        Calculates the minimum distance of closest approach
+        between all vertex-tracks and IP tracks in the event
+        """
+        min_dist = None
         wf_hits = []
         for hit in hits:
             if hit.layer < 4:
                 wf_hits.append(hit)
         if len(wf_hits) == 0:
             return False
-        min_dist = None
         for vertex in vertices:
             v_tracks = []
             for t_index in vertex.tracks:
@@ -396,7 +405,17 @@ class IPVeto:
                     dist = IPVeto.TrackDistance(track, tracklet, t_shortest)
                     if min_dist is None or dist < min_dist:
                         min_dist = dist
-        if min_dist is None or min_dist < cutoff:
+        return min_dist
+
+    def DistanceVeto(vertices, tracks, hits, cutoff):
+        """
+        Decide if the event is vetoed based on the distance cutoff
+        Return True if vetoed. Return false if not vetoed
+        """ 
+        min_dist = IPVeto.MinDistance(vertices, tracks, hits)
+        if min_dist is None:
+            return False
+        if min_dist < cutoff:
             return True
         return False
 
@@ -405,52 +424,59 @@ class MaterialVeto:
     """
     This only vetoes if all vertices are within the cutoff range
     """
+    def __init__(self, nLayers):
+        """
+        Set the number of layers for the material veto
+        """
+        self.y_layers = y_layer_starts[len(y_layer_starts) - nLayers:]
+        self.z_walls = z_wall_starts[:nLayers]
+        self.wall_top = y_layer_starts[nLayers - n_floors]
 
-    def MakeLayers():
+    def MakeLayers(self):
         """
         Returns a list of the layer modules of 
         the form
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
         """
         layers = []
-        for i in range(2, len(y_layer_starts)):
+        for i in range(len(self.y_layers)):
             for j in range(len(x_mod_starts)):
                 for k in range(len(z_mod_starts)):
-                    y_min = y_layer_starts[i]; y_max = y_layer_starts[i] + thickness
+                    y_min = self.y_layers[i]; y_max = self.y_layers[i] + thickness
                     x_min = x_mod_starts[j]; x_max = x_mod_starts[j] + mod_length
                     z_min = z_mod_starts[k]; z_max = z_mod_starts[k] + mod_length
-                    layers.append(np.array(((x_min, x_max),(y_min,y_max),(z_min,z_max))))
+                    layers.append(np.array(((x_min,x_max),(y_min,y_max),(z_min,z_max))))
         return layers
     
-    def MakeBacks():
+    def MakeBacks(self):
         """
         Returns a list of the back modules of 
         the form
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
         """
         backs = []
-        y_min = back_top - mod_length; y_max = back_top
+        y_min = self.wall_top - mod_length; y_max = self.wall_top
         for j in range(len(x_mod_starts)):
-            for k in range(len(z_wall_starts)):
+            for k in range(len(self.z_walls)):
                 x_min = x_mod_starts[j]; x_max = x_mod_starts[j] + mod_length
-                z_min = z_wall_starts[k]; z_max = z_wall_starts[k] + thickness
+                z_min = self.z_walls[k]; z_max = self.z_walls[k] + thickness
                 backs.append(np.array(((x_min, x_max),(y_min,y_max),(z_min,z_max))))
         return backs
     
-    def MakeWalls():
+    def MakeWalls(self):
         """
         Returns a list of the hermetic walls of the form
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
         """
         walls = []
-        y_min = y_layer_starts[0]; y_max = back_top
+        y_min = y_bottoms[0]; y_max = self.wall_top
         x_min = x_mod_starts[0]; x_max = x_mod_starts[-1] + mod_length
         for i in range(len(front_wall_starts)):
             z_min = front_wall_starts[i]; z_max = front_wall_starts[i] + thickness
             walls.append(np.array(((x_min,x_max),(y_min,y_max),(z_min,z_max))))
         return walls
     
-    def MakeFloors():
+    def MakeFloors(self):
         """
         Returns a list of the hermetic walls of the form
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
@@ -458,21 +484,22 @@ class MaterialVeto:
         floors = []
         z_min = z_mod_starts[0]; z_max = z_mod_starts[-1] + mod_length
         x_min = x_mod_starts[0]; x_max = x_mod_starts[-1] + mod_length
-        for i in range(n_floors):
-            y_min = y_layer_starts[i]; y_max = y_layer_starts[i] + thickness
+        for i in range(len(y_bottoms)):
+            y_min = y_bottoms[i]; y_max = y_bottoms[i] + thickness
             floors.append(np.array(((x_min,x_max),(y_min,y_max),(z_min,z_max))))
         return floors
         
-    def MakeBeams():
+    def MakeBeams(self):
         """
         Returns a list with beams of the form 
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
         """
         beams = []
-        for i in range(len(y_layer_starts) - 1):
+        all_layers = y_bottoms + self.y_layers
+        for i in range(1, len(all_layers) - 1):
             for j in range(len(x_mod_starts)):
                 for k in range(len(z_mod_starts)):
-                    y_min = y_layer_starts[i] + thickness; y_max = y_layer_starts[i+1]
+                    y_min = all_layers[i] + thickness; y_max = all_layers[i+1]
                     
                     x_min = x_mod_starts[j]; x_max = x_mod_starts[j] + beam_dim
                     z_min = z_mod_starts[k]; z_max = z_mod_starts[k] + beam_dim
@@ -491,7 +518,7 @@ class MaterialVeto:
                     beams.append(np.array(((x_min, x_max),(y_min,y_max),(z_min,z_max))))
         return beams
 
-    def MakeGround():
+    def MakeGround(self):
         """
         Returns a list with the ground of the form
         ((x_min, x_max),(y_min,y_max),(z_min, z_max))
@@ -503,19 +530,19 @@ class MaterialVeto:
         ground.append(np.array(((x_min,x_max), (y_min,y_max),(z_min,z_max))))
         return ground
     
-    def MakeMaterials():
+    def MakeMaterials(self):
         """
         Returns all the materials concatenated together
         """
-        beams = MaterialVeto.MakeBeams()
-        layers = MaterialVeto.MakeLayers()
-        backs = MaterialVeto.MakeBacks()
-        walls = MaterialVeto.MakeWalls()
-        floors = MaterialVeto.MakeFloors()
-        ground = MaterialVeto.MakeGround()
+        beams = self.MakeBeams()
+        layers = self.MakeLayers()
+        backs = self.MakeBacks()
+        walls = self.MakeWalls()
+        floors = self.MakeFloors()
+        ground = self.MakeGround()
         return np.concatenate((beams,layers,backs,walls,floors, ground))
     
-    def GetResidual(vertex, rectangle):
+    def GetResidual(self, vertex, rectangle):
         """
         Get the distance between the vertex and a rectangle
         The rectangle is of the form 
@@ -530,40 +557,64 @@ class MaterialVeto:
         z_clam = max(z_min, min(z_v, z_max))
         return np.array(((x_v - x_clam), (y_v - y_clam), (z_v - z_clam)))
     
-    def GetChi2(vertex, rectangle):
+    def GetChi2(self, vertex, rectangle):
         """
         Get the chi2 between the vertex and the rectangle
         """
-        res = MaterialVeto.GetResidual(vertex, rectangle)
+        res = self.GetResidual(vertex, rectangle)
         trimmed_cov = np.delete(vertex.cov, 3, 0)
         trimmed_cov = np.delete(trimmed_cov, 3, 1)
         return res.T@np.linalg.inv(trimmed_cov)@res
     
-    def MinDistance(vertex, materials):
+    def MinDistance(self, vertex, materials):
         """
         Returns the minimum distance to a material
         """
         min_dist = None
         for material in materials:
-            res = MaterialVeto.GetResidual(vertex, material)
+            res = self.GetResidual(vertex, material)
             dist = np.sqrt(res[0]**2 + res[1]**2 + res[2]**2)
             if min_dist is None or dist < min_dist:
                 min_dist = dist
         return min_dist
     
-    def MinChi2(vertex):
+    def MinChi2(self, vertex):
         """
         Returns the minimum chi2 of the vertex
         """
-        materials = MakeMaterials()
+        materials = self.MakeMaterials()
         min_chi2 = None
         for material in materials:
-            chi2 = MaterialVeto.GetChi2(vertex, material)
+            chi2 = self.GetChi2(vertex, material)
             if min_chi2 is None or chi2 < min_chi2:
                 min_chi2 = chi2
         return min_chi2
+    
+    def MinMinDistance(self, vertices, materials):
+        """
+        Get the minimum of the minimum distances
+        in the event (strict version)
+        """
+        min_dist = None 
+        for vertex in vertices:
+            dist = self.MinDistance(vertex, materials)
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+        return min_dist
 
-    def DistanceVeto(vertices, materials, cutoff, strict=False):
+    def MaxMinDistance(self, vertices, materials):
+        """
+        Get the maximum of the minimum distances
+        in the event (lenient version)
+        """
+        max_dist = None 
+        for vertex in vertices:
+            dist = self.MinDistance(vertex, materials)
+            if max_dist is None or dist > max_dist:
+                max_dist = dist
+        return max_dist
+
+    def DistanceVeto(self, vertices, materials, cutoff, strict=False):
         """
         Vetoes an event if all vertices are within the cutoff distance from a material.
         Return True if vetoed. Return false if not vetoed
@@ -572,7 +623,7 @@ class MaterialVeto:
         max_dist = None # Max of the minimum distances
         min_dist = None #
         for vertex in vertices:
-            dist = MaterialVeto.MinDistance(vertex, materials)
+            dist = self.MinDistance(vertex, materials)
             if max_dist is None or dist > max_dist:
                 max_dist = dist
             if min_dist is None or dist < min_dist:
@@ -580,21 +631,22 @@ class MaterialVeto:
         if not strict and max_dist is None or max_dist > cutoff:
             return False
         elif strict and min_dist is None or min_dist > cutoff:
-            retrn False
+            return False
         return True
 
 #----------------------------------------------------------------------------------------
-def CutoffVeto(vertices, strict=False):
+def CutoffVeto(vertices, nLayers, strict=False):
     """
     Vetoes an event based on vertex being in decay volume
     Return True if vetoed. Return false if not vetoed
     if strict: veto if a single vertex is outside the cutoff
     """
     for vertex in vertices:
-        if not (vertex.y0 < y_layer_starts[2] and \
-        vertex.y0 > 8500 and vertex.x0 > -2000 and \
-        vertex.x0 < 2000 and vertex.z0 > 6800 and \
-        vertex.z0 < 11350): # One outside 
+        if not (vertex.y0 < y_layer_starts[len(y_layer_starts) - nLayers] and \
+        vertex.y0 > y_bottoms[0] - 20 and vertex.x0 > -x_mod_starts[0] - 20 and \
+        vertex.x0 < x_mod_starts[-1] + mod_length + 20 and \
+        vertex.z0 > front_wall_starts[0] - 20 and \
+        vertex.z0 < z_wall_starts[-1] + 20): # One outside 
             if strict:
                 return True
         else: # One inside
@@ -619,8 +671,10 @@ def TrackNumberVeto(vertices, n, strict=False):
         else:
             if not strict: # one vertex >= than n tracks
                 return False
-    if strict: # 
+    if strict: # All vertices >= n tracks
         return False
+    if not strict: # No vertices >= n tracks
+        return True
 
 #----------------------------------------------------------------------------------------
 def UpVertexVeto(vertices, tracks):
@@ -760,3 +814,438 @@ class ConeVeto:
 
 
 
+class Detector:
+    # Use cm as unit
+    cm = 1      
+
+    OutBoxLimits =[[-1950.0, 1950.0],  
+                   [8547.0, 8547.0+1754.200],  
+                   [7000.0, 7000.0+3900]]
+    
+    BoxMargin = 20 # Leave 20 cm on all sides
+    BoxDecayHeight = 10.968*100
+    BoxLimits   = [[-1950.0 + BoxMargin, 1950.0 - BoxMargin],  
+                   [8547.0 +84.6 + BoxMargin, 8547.0 + BoxDecayHeight - BoxMargin],  
+                   [7000.0 + BoxMargin, 7000.0+3900 - BoxMargin]    ]
+    
+    WallLimits  = [ BoxLimits[0], [BoxLimits[1][0],BoxLimits[1][0] + 2000.0 ] ] # [x,y] [cm,cm]
+
+    scintillator_height_all = 1.6 # 2cm +0.3*2Al case
+    # 2023-04-25 Tom: changing to 6 layers. New numbers pull from simulation
+
+
+    LayerYLims= [[8547.000,8547.000+scintillator_height_all],
+                 [8628.600,8628.600+scintillator_height_all],
+                 [9890.200,9890.200+scintillator_height_all],
+                 [9971.800,9971.800+scintillator_height_all],
+                 [10053.400,10053.400+scintillator_height_all],
+                 [10135.000,10135.000+scintillator_height_all]]    
+        
+    
+    
+    y_floor = LayerYLims[2][1]
+    z_wall = BoxLimits[2][0] + 3 # [cm] add 3 cm to account for wall width
+
+    ModuleXLims = [ [-4950. + 1000.*n, -4050. + 1000*n] for n in range(10) ]
+    ModuleZLims = [ [7000.  + 1000.*n,  7900. + 1000*n] for n in range(10) ]
+
+
+    def __init__(self):
+        # print("Detector Constructed")
+        self.time_resolution=1e-9 #1ns=1e-9s
+        
+        self.n_top_layers = 5
+        self.x_edge_length = 39.0 # decrease from 99->39 -- Tom
+        self.y_edge_length = 39.0 # decrease from 99->39 -- Tom
+        self.n_modules = 4
+
+        self.x_displacement = 70.0
+        self.y_displacement = -49.5
+        self.z_displacement = 6001.5
+
+        self.layer_x_edge_length = 9.0
+        self.layer_y_edge_length = 9.0
+
+        self.scint_x_edge_length = 4.5
+        self.scint_y_edge_length = 0.045
+        self.scintillator_length = self.scint_x_edge_length
+        self.scintillator_width = self.scint_y_edge_length
+        self.scintillator_height = 0.02
+        self.scintillator_casing_thickness = 0.003
+
+        self.steel_height = 0.03
+
+        self.air_gap = 30
+
+        self.layer_spacing = 0.8
+        self.layer_count   = 8
+
+        self.module_x_edge_length = 9.0
+        self.module_y_edge_length = 9.0
+        self.module_case_thickness = 0.02
+
+        self.full_layer_height =self.layer_w_case = self.scintillator_height + 2*self.scintillator_casing_thickness
+
+        self.layer_z_displacement = [                          0.5*self.layer_w_case,
+                                        1*self.layer_spacing + 1.5*self.layer_w_case,
+                                    5 +                        0.5*self.layer_w_case,
+                                    5 + 1*self.layer_spacing + 1.5*self.layer_w_case,
+                                    5 + 2*self.layer_spacing + 2.5*self.layer_w_case,
+                                    5 + 3*self.layer_spacing + 3.5*self.layer_w_case,
+                                    5 + 4*self.layer_spacing + 4.5*self.layer_w_case,
+                                    5 + 5*self.layer_spacing + 5.5*self.layer_w_case]
+
+        self.module_x_displacement = [i*(self.module_x_edge_length + 1.0) -0.5 * self.x_edge_length + 0.5*self.module_x_edge_length for i in range(self.n_modules)]
+        self.module_y_displacement = [i*(self.module_y_edge_length + 1.0) -0.5 * self.y_edge_length + 0.5*self.module_y_edge_length for i in range(self.n_modules)]
+        pass
+    def xLims(self):
+        return self.BoxLimits[0]
+
+    def yLims(self):
+        return self.BoxLimits[1]
+
+    def zLims(self):
+        return self.BoxLimits[2]
+
+    def LayerY(self, n):
+        return self.LayerYLims[n]
+
+    def LayerYMid(self, n):
+        return (self.LayerYLims[n][0] + self.LayerYLims[n][1])/2.
+
+    def numLayers(self):
+        return len(self.LayerYLims)
+
+    def DrawColor(self):
+        return "tab:gray"
+
+    def inLayer(self, yVal):
+        for layerN, layerLims in enumerate(self.LayerYLims):
+            if yVal > layerLims[0] and yVal < layerLims[1]:
+                return layerN
+        return -1
+
+    def nextLayer(self, yVal):
+        for n in range(len(self.LayerYLims)-1):
+            if yVal > self.LayerYLims[n][1] and yVal < self.LayerYLims[n+1][0]:
+                return n+1
+        return 999
+
+
+    def inLayer_w_Error(self, yVal, yErr):
+        for layerN, layerLims in enumerate(self.LayerYLims):
+
+            lower = yVal - yErr
+            upper = yVal + yErr
+
+            if lower < layerLims[0] and upper > layerLims[1]:
+                return layerN
+
+            if lower < layerLims[0] and upper > layerLims[0]:
+                return layerN
+
+            if lower < layerLims[1] and upper > layerLims[1]:
+                return layerN
+
+
+        return -1
+
+    def inBox(self, x, y, z):
+        if x > self.xLims()[0] and x < self.xLims()[1]:
+            if y > self.yLims()[0] and y < self.yLims()[1]:
+                if z > self.zLims()[0] and z < self.zLims()[1]:
+                    return True
+        return False
+    
+det=Detector()  
+
+
+
+
+    
+class Cut:
+    
+    CONST_CMS_LOC = np.array([0,0,0])
+    CONST_VETO_LAYER = np.array([0,1,2,3])
+    CONST_NOISE_RATE_SUPRESS = 0.1
+    RNG = np.random.default_rng()
+    
+    @staticmethod
+    def angle(v1,v2):
+        """Find angle between two vectors"""
+        mag1 = np.linalg.norm(v1)
+        mag2 = np.linalg.norm(v2)
+        opening_angle = np.arccos(np.dot(v1, v2)/( mag1*mag2 ))
+        return opening_angle
+    
+
+
+    @staticmethod
+    def find_cone(unit_directions):
+        """
+        Find the minimum cone that encompasses multiple unit vectors
+        
+        INPUT:
+        unit_directions:
+            list of unit direction. MUST HAVE AT LEAST 4 vectors.
+
+        RETURN:
+        ---
+        centorid: direction
+        max_angle: opening angle
+
+        """
+
+        # Step 2: Compute the convex hull
+        hull = ConvexHull(unit_directions)
+
+
+        # Step 3: Compute the centroid of the convex hull (cone axis)
+        hull_vertices = unit_directions[hull.vertices]
+        centroid = np.mean(hull_vertices, axis=0)
+        centroid /= np.linalg.norm(centroid)  # Normalize to unit vector
+
+        # Step 4: Calculate the maximum angle (cone aperture) between centroid and hull vertices
+        angles = np.arccos(np.clip(np.dot(hull_vertices, centroid), -1.0, 1.0))
+        max_angle = np.max(angles)
+
+        return centroid, max_angle    
+
+    @staticmethod
+    def vertex_updown(vertices, tracks):
+        """
+        Find index of vertex that has all tracks going up
+        """
+        upward_inds = []
+        for i in range(len(vertices)):
+            vertex = vertices[i]
+            isupward=True
+            for i in vertex.tracks:
+                # All tracks need to go upwards
+                if tracks[i].At<0:
+                    isupward=False
+                    break
+            if isupward:
+                upward_inds.append(i)
+
+        return upward_inds
+
+    @staticmethod
+    def vertex_opening_angle(vertices, tracks, return_all=False):
+        """
+        Get the largest opening angle of all vetices, and the axis of the corresponding cone
+
+        RETURN:
+        ---
+        open_angle: float
+        direction: [kx, ky, kz]
+        """
+        open_angles = []
+        directions = []
+        for k1 in range(len(vertices)):
+            vertex = vertices[k1]
+            trackindices = vertex.tracks
+            open_angles_i = []
+            directions_i = []
+            
+            ## This is wrong when more than 3 tracks. Max angle between any two is not the encompassing cone
+            if len(trackindices)<=3:
+                # Calculate opening angle for all combination of tracks within vertex
+                combolist = list(itertools.combinations(trackindices, 2))
+                for combo in combolist:
+                    combo = [int(combo[0]),int(combo[1])]
+
+                    track1, track2 = tracks[combo[0]], tracks[combo[1]]
+                    v1 = [track1.Ax/track1.At, 1/track1.At, track1.Az/track1.At]
+                    v2 = [track2.Ax/track2.At, 1/track2.At, track2.Az/track2.At]
+
+                    mag1 = np.linalg.norm(v1)
+                    mag2 = np.linalg.norm(v2)
+                    cos_opening_angle = np.dot(v1, v2)/( mag1*mag2 )
+
+                    direction = v1/mag1 + v2/mag2
+                    direction = direction/np.linalg.norm(direction)
+                    open_angles_i.append(np.arccos(cos_opening_angle))
+                    directions_i.append(direction)
+
+                ind_i=np.argmax(open_angles_i)
+                open_angles.append(open_angles_i[ind_i])
+                directions.append(directions_i[ind_i])
+            
+            ## Correct way for >=4 tracks
+            else:
+                track_directions = [[tracks[ind].Ax/tracks[ind].At, tracks[ind].Ay/tracks[ind].At, tracks[ind].Az/tracks[ind].At] for ind in trackindices]
+                track_directions = np.array([a/np.linalg.norm(a) for a in track_directions])
+                
+                try:
+                    centroid, max_angle = find_cone(track_directions)
+                except KeyboardInterrupt:
+                    break
+                except:
+                    centroid=[0,0,0]
+                    max_angle=0
+                    
+
+                open_angles.append(max_angle*2)
+                directions.append(centroid)            
+
+        if return_all:
+            return open_angles, directions
+        else:
+            # Get largest opening angle
+            ind=np.argmax(open_angles)
+            return open_angles[ind], directions[ind]
+    
+    @staticmethod
+    def vertex_conatins_cms(vertices, tracks, margin=0):
+        """check if any vertex contains the direction of CMS IP
+        Return true if ANY vertex contains the CMS direction
+        """    
+        open_angles, directions = Cut.vertex_opening_angle(vertices, tracks, return_all=True)
+        inds = []
+        for i in range(len(directions)):
+            direction_cms = np.array([vertices[i].x0, vertices[i].y0, vertices[i].z0]) - Cut.CONST_CMS_LOC
+            open_angle = open_angles[i]
+            angle_diff = Cut.angle(direction_cms, directions[i])
+            if angle_diff<open_angle+margin:
+                inds.append(i)
+            
+        return inds
+            
+
+    @staticmethod
+    def vertex_n_tracks(vertices, tracks):
+        ntrack=[len(vertex.tracks) for vertex in vertices]
+        return max(ntrack)
+
+    @staticmethod
+    def vertex_min_chi2(vertices, tracks):
+        chi2s=[vertex.chi2 for vertex in vertices]
+        return min(chi2s)
+
+    @staticmethod
+    def vertex_inbox(vertices, tracks):
+        inbox_inds=[]
+        for i in range(len(vertices)):
+            vertex=vertices[i]
+            if det.inBox(vertex.x0,vertex.y0,vertex.z0):
+                inbox_inds.append(i)
+
+        return inbox_inds
+    
+    @staticmethod
+    def vertex_veto_hits_in_cone(vertices, tracks, hits, opening_angles=None, directions=None, vertex_inds=None, hit_speed_cut = [25, 35]):
+        """
+        Check the number of hits in veto layers
+        """
+        if opening_angles is None or directions is None:
+            opening_angles, directions = Cut.vertex_opening_angle(vertices, tracks, return_all=True)
+        if vertex_inds is None:
+            vertex_inds = np.arange(len(vertices))
+            
+        n_veto_hits = []
+        # For each vertex, count number of hits that is within the cone
+        for i in vertex_inds:
+            vertex_position = np.array([vertices[i].x0, vertices[i].y0, vertices[i].z0])
+            vertex_time = vertices[i].t0
+            vertex_direction = directions[i]
+            vertex_halfangle = opening_angles[i]/2
+            nhits=0
+            for hit in hits:
+                if hit.layer not in Cut.CONST_VETO_LAYER:
+                    continue
+                hit_direction = (vertex_position - np.array([hit.x, hit.y, hit.z])) / (vertex_time - hit.t)
+                hit_speed = np.linalg.norm(hit_direction)
+                
+                # # Randomly drop the noise hits
+                # hit_type = hit.type
+                
+                if (Cut.angle(hit_direction, vertex_direction) < vertex_halfangle) \
+                    and hit_speed>hit_speed_cut[0] and  hit_speed<hit_speed_cut[1]:
+                    nhits+=1
+            n_veto_hits.append(nhits)
+        return n_veto_hits 
+    
+    @staticmethod
+    def vertex_veto_hits_dist(vertices, tracks, hits):
+        default_dist = float('inf')
+        vertex_inds = np.arange(len(vertices))
+
+        veto_dists = []
+        for i in vertex_inds: 
+            # Loop all tracks
+            v = vertices[i]
+            
+            dists_this_vertex = []
+            for itrack in v.tracks:
+                track = tracks[itrack]
+                dists_this_track = []
+                for hit in hits:
+                    if hit.layer not in Cut.CONST_VETO_LAYER:
+                        continue
+                    dists_this_track.append(Cut.track_to_point_dist(Cut.track_format(track), [hit.x, hit.y, hit.z, hit.t]))
+                
+                min_dist_track = min(dists_this_track) if len(dists_this_track)>0 else default_dist
+                dists_this_vertex.append(min_dist_track)
+            min_dist_vert = min(dists_this_vertex) if len(dists_this_vertex)>0 else default_dist
+            veto_dists.append(min_dist_vert)
+        return veto_dists
+    
+    
+    
+            
+                    
+    @staticmethod
+    def track_format(track_km):
+        """Change the parameter format of the track from (x0,y0,z0,t0,Ax, Ay, Az, At) to (x0,y0,z0,vx, vy, vz,t0)"""
+        return [track_km.x0, track_km.y0, track_km.z0, track_km.Ax/track_km.At, track_km.Ay/track_km.At, track_km.Az/track_km.At, track_km.t0]
+    
+    @staticmethod
+    def closest_approach(tr1, tr2):
+        """
+        Input:
+        ---
+        tr1,tr2:
+            lists of track paramters [x0, y0, x0, vx, vy, vz, t0]
+
+        return:
+        ---
+        midpoint([x,y,z,t]), distance
+        """
+
+        r1, v1, t1 = tr1[:3], tr1[3:6], tr1[:6]
+        r2, v2, t2 = tr2[:3], tr2[3:6], tr2[:6]
+        
+        # Relative speed
+        rel_v = v2 - v1
+        rel_v2 = np.dot(rel_v, rel_v) 
+        # Relative position
+        displacement = r1 - r2; 
+        
+        # Midpoint time
+        t_ca = (  np.dot(displacement, rel_v) + np.dot((v2*t2 - v1*t1), rel_v)  )/rel_v2;    
+        
+        # Midpoint position
+        pos1 = r1 + v1*(t_ca - t1);
+        pos2 = r2 + v2*(t_ca - t2);
+        r_ca = (pos1 + pos2)*(0.5)
+        
+        # Closest distance
+        line_distance = np.linalg.norm((pos1- pos2))
+
+        return np.concatenate((r_ca, [t_ca])), line_distance
+
+
+
+    @staticmethod
+    def track_to_point_dist(track, point):
+        v1 = np.array(track[3:6])
+        r1 = np.array(track[:3])
+        t1 = np.array(track[6])
+        
+        r0 = point[:3]
+        t0 = point[3]
+        pos = r1 + v1*(t1-t0)
+        dist = np.linalg.norm(pos-r0)
+        return dist
+        

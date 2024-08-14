@@ -25,12 +25,7 @@ else:
     mode = "lenient"
     STRICT = False
 
-if (int(layers) == 4):
-    from tests import Vetoes4 as VT
-elif (int(layers) == 5):
-    from tests import Vetoes5 as VT
-elif (int(layers) == 6):
-    from tests import Vetoes6 as VT
+from tests import Vetoes as VT
 
 sys.path.append("/project/rrg-mdiamond/owhgabri/pyTracker")
 sys.path.insert(1, "/project/rrg-mdiamond/owhgabri/pyTracker")
@@ -91,7 +86,7 @@ for f in pathList:
         if len(vertices) == 0:
             continue
         nEvents += 1
-        if VT.CutoffVeto(vertices, strict=STRICT):
+        if VT.CutoffVeto(vertices, int(layers), strict=STRICT):
             nVetoed += 1
 
 print("Number of events:", nEvents)
